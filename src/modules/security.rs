@@ -2,8 +2,8 @@ use super::{MhyContext, MhyModule, ModuleType};
 use anyhow::Result;
 use ilhook::x64::Registers;
 
-const IL2CPP_ARRAY_NEW: usize = 0x5432A0;
-const KEY_SIGN_CHECK: usize = 0x4235;
+const IL2CPP_ARRAY_NEW: usize = 0x553C10;
+const KEY_SIGN_CHECK: usize = 0x41C5;
 
 const KEY_SIZE: u64 = 272;
 const KEY_PREFIX: u64 = 0x0D700010182020A01;
