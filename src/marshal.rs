@@ -2,7 +2,7 @@ use std::ffi::CStr;
 
 use crate::util;
 
-const PTR_TO_STRING_ANSI: usize = 0x104F80F0;
+const PTR_TO_STRING_ANSI: usize = 0x103CBB00;
 type MarshalPtrToStringAnsi = unsafe extern "fastcall" fn(*const u8) -> *const u8;
 
 pub unsafe fn ptr_to_string_ansi(content: &CStr) -> *const u8 {
