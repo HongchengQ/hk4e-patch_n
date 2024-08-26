@@ -1,3 +1,3 @@
 # hk4e-patch
 
-Genshin Impact encryption patch (4.6.0)
+Genshin Impact encryption patch (4.8.50)

@@ -2,9 +2,9 @@ use core::iter::once;
 use std::ffi::{c_void, OsStr};
 
 use std::os::windows::ffi::OsStrExt;
-use windows::Win32::System::LibraryLoader::{GetProcAddress, GetModuleHandleW};
+use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetModuleHandleW, GetProcAddress};
 use windows::Win32::System::Memory::{PAGE_EXECUTE_READWRITE, PAGE_PROTECTION_FLAGS, VirtualProtect};
-use windows::core::{PCSTR, PCWSTR};
+use windows::core::{s, PCSTR, PCWSTR};
 
 pub fn wide_str(value: &str) -> Vec<u16> {
     OsStr::new(value).encode_wide().chain(once(0)).collect()
@@ -29,7 +29,12 @@ pub unsafe fn disable_memprotect_guard() {
         PCSTR::from_raw(c"NtProtectVirtualMemory".to_bytes_with_nul().as_ptr()),
     )
     .unwrap();
-    let nt_query = GetProcAddress(ntdll, PCSTR::from_raw(c"NtQuerySection".to_bytes_with_nul().as_ptr())).unwrap();
+
+    let routine = if is_wine() {
+        GetProcAddress(ntdll, s!("NtPulseEvent")).unwrap()
+    } else {
+        GetProcAddress(ntdll, s!("NtQuerySection")).unwrap()
+    } as *mut u32;
 
     let mut old_prot = PAGE_PROTECTION_FLAGS(0);
     VirtualProtect(
@@ -40,7 +45,6 @@ pub unsafe fn disable_memprotect_guard() {
     )
     .unwrap();
 
-    let routine = nt_query as *mut u32;
     let routine_val = *(routine as *const usize);
 
     let lower_bits_mask = !(0xFFu64 << 32);
@@ -60,4 +64,9 @@ pub unsafe fn disable_memprotect_guard() {
         &mut old_prot,
     )
     .unwrap();
+}
+
+unsafe fn is_wine() -> bool {
+    let module = GetModuleHandleA(s!("ntdll.dll")).unwrap();
+    GetProcAddress(module, s!("wine_get_version")).is_some()
 }

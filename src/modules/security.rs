@@ -1,25 +1,35 @@
+use std::ffi::CString;
+
+use crate::marshal;
+
 use super::{MhyContext, MhyModule, ModuleType};
 use anyhow::Result;
 use ilhook::x64::Registers;
 
-const IL2CPP_ARRAY_NEW: usize = 0x553C10;
-const KEY_SIGN_CHECK: usize = 0x41C5;
+const MHYRSA_PERFORM_CRYPTO_ACTION: usize = 0xC3DEDB;
+const KEY_SIGN_CHECK: usize = 0xC4236D;
+const SDK_UTIL_RSA_ENCRYPT: usize = 0x10A02A60;
 
-const KEY_SIZE: u64 = 272;
-const KEY_PREFIX: u64 = 0x0D700010182020A01;
+const KEY_SIZE: usize = 268;
 static SERVER_PUBLIC_KEY: &[u8] = include_bytes!("../../server_public_key.bin");
-type Il2cppArrayNew = unsafe extern "fastcall" fn(u64, u64) -> *const u8;
+static SDK_PUBLIC_KEY: &str = include_str!("../../sdk_public_key.xml");
 
 pub struct Security;
 
 impl MhyModule for MhyContext<Security> {
     unsafe fn init(&mut self) -> Result<()> {
-        self.interceptor.replace(
-            self.assembly_base + IL2CPP_ARRAY_NEW,
-            il2cpp_array_new_replacement,
+        self.interceptor.attach(
+            self.assembly_base + MHYRSA_PERFORM_CRYPTO_ACTION,
+            on_mhy_rsa,
         )?;
+
         self.interceptor
-            .attach(self.assembly_base + KEY_SIGN_CHECK, after_key_sign_check)
+            .attach(self.assembly_base + KEY_SIGN_CHECK, after_key_sign_check)?;
+
+        self.interceptor.attach(
+            self.assembly_base + SDK_UTIL_RSA_ENCRYPT,
+            on_sdk_util_rsa_encrypt,
+        )
     }
 
     unsafe fn de_init(&mut self) -> Result<()> {
@@ -31,36 +41,28 @@ impl MhyModule for MhyContext<Security> {
     }
 }
 
-// Sign check of rsa key that we just replaced.
 unsafe extern "win64" fn after_key_sign_check(reg: *mut Registers, _: usize) {
+    println!("key sign check!");
     (*reg).rax = 1
 }
 
-static mut KEY_PTR: Option<*mut u8> = None;
-unsafe extern "win64" fn il2cpp_array_new_replacement(
-    reg: *mut Registers,
-    actual_func: usize,
-    _: usize,
-) -> usize {
-    let il2cpp_array_new = std::mem::transmute::<usize, Il2cppArrayNew>(actual_func);
-    let ret_val = il2cpp_array_new((*reg).rcx, (*reg).rdx) as usize;
+unsafe extern "win64" fn on_mhy_rsa(reg: *mut Registers, _: usize) {
+    println!("key: {:X}", *((*reg).rdx as *const u64));
+    println!("len: {:X}", (*reg).r8);
 
-    let rdx = (*reg).rdx;
-    if rdx == KEY_SIZE {
-        KEY_PTR = Some(ret_val as *mut u8);
-    } else {
-        if let Some(key_ptr) = KEY_PTR {
-            if *(key_ptr.wrapping_add(32) as *const u64) == KEY_PREFIX {
-                std::ptr::copy_nonoverlapping(
-                    SERVER_PUBLIC_KEY.as_ptr(),
-                    key_ptr.wrapping_add(32),
-                    SERVER_PUBLIC_KEY.len(),
-                );
-            }
-        }
+    if (*reg).r8 as usize == KEY_SIZE {
+        println!("[*] key replaced");
 
-        KEY_PTR = None;
+        std::ptr::copy_nonoverlapping(
+            SERVER_PUBLIC_KEY.as_ptr(),
+            (*reg).rdx as *mut u8,
+            SERVER_PUBLIC_KEY.len(),
+        );
     }
+}
 
-    ret_val
+unsafe extern "win64" fn on_sdk_util_rsa_encrypt(reg: *mut Registers, _: usize) {
+    println!("[*] SDK RSA: key replaced");
+    (*reg).rcx =
+        marshal::ptr_to_string_ansi(CString::new(SDK_PUBLIC_KEY).unwrap().as_c_str()) as u64;
 }
